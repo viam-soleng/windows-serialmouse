@@ -1,0 +1,27 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "viam-soleng:windows-serialmouse",
+  "visibility": "public",
+  "url": "https://github.com/viam-soleng/windows-serialmouse",
+  "description": "Windows module to disable serial mouse",
+  "models": [
+  {
+    "api": "rdk:component:generic",
+    "model": "viam-soleng:windows-serialmouse:disable",
+    "short_description": "Disable the Windows serial mouse",
+    "markdown_link": "README.md#windows-serialmouse"
+  }
+  ],
+  "applications": null,
+  "markdown_link": "README.md",
+  "entrypoint": "bin/windows-serialmouse.exe",
+  "first_run": "",
+  "build": {
+    "build": "make module.tar.gz",
+    "setup": "make setup",
+    "path": "module.tar.gz",
+    "arch": [
+      "windows/amd64"
+    ]
+  }
+}
