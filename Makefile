@@ -24,4 +24,5 @@ setup:
 	go mod tidy
 
 upload:
-	echo viam module upload --version "0.0.1" --platform "windows/amd64" module.tar.gz
+	echo "https://app.viam.com/module/viam-soleng/windows-serialmouse"
+	@echo viam module upload --version \"0.0.2\" --platform \"windows/amd64\" module.tar.gz
