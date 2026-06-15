@@ -71,38 +71,102 @@ func (s *windowsSerialmouseDisable) Name() resource.Name {
 func (s *windowsSerialmouseDisable) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	// https://paulhutch.blog/2019/06/24/disable-serial-mouse-detection/
 	// GPS will be on the serial line, not a serial mouse
+	startChanged, err := s.disableSermouseService()
+	if err != nil {
+		return nil, err
+	}
+
+	// Also stop Windows from polling the built-in serial port(s) for a serial
+	// mouse during enumeration, otherwise GPS data on the line can be
+	// misdetected. PNP0501 is the ACPI ID for the built-in 16550 serial port.
+	skippedPorts, err := s.skipSerialPortEnumeration()
+	if err != nil {
+		return nil, err
+	}
+
+	message := "Start value previously set to 4"
+	if startChanged {
+		message = "Start value changed from 3 to 4"
+	}
+
+	return map[string]interface{}{
+		"start":         4,
+		"changed":       startChanged,
+		"message":       message,
+		"skipped_ports": skippedPorts,
+	}, nil
+}
+
+// disableSermouseService sets the sermouse service Start value to 4 (disabled).
+// It reports whether the value was actually changed.
+func (s *windowsSerialmouseDisable) disableSermouseService() (bool, error) {
 	const keyPath = `System\CurrentControlSet\Services\sermouse`
 
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.QUERY_VALUE|registry.SET_VALUE)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open registry key: %w", err)
+		return false, fmt.Errorf("failed to open registry key: %w", err)
 	}
 	defer k.Close()
 
 	val, _, err := k.GetIntegerValue("Start")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read Start value: %w", err)
+		return false, fmt.Errorf("failed to read Start value: %w", err)
 	}
 
 	// No change required
 	if val == 4 {
-		return map[string]interface{}{
-			"start":   4,
-			"changed": false,
-			"message": "Start value previously set to 4",
-		}, nil
+		return false, nil
 	}
 
 	if err := k.SetDWordValue("Start", 4); err != nil {
-		return nil, fmt.Errorf("failed to set Start value: %w", err)
+		return false, fmt.Errorf("failed to set Start value: %w", err)
 	}
 
 	s.logger.Info("Windows serial mouse Start registry value changed from 3 to 4")
-	return map[string]interface{}{
-		"start":   4,
-		"changed": true,
-		"message": "Start value changed from 3 to 4",
-	}, nil
+	return true, nil
+}
+
+// skipSerialPortEnumeration writes a SkipEnumerations DWORD of 0xffffffff to
+// every built-in serial port instance under
+// SYSTEM\CurrentControlSet\Enum\ACPI\PNP0501, preventing Windows from polling
+// those COM ports for a serial mouse. It returns the instance paths it updated.
+func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error) {
+	const enumPath = `System\CurrentControlSet\Enum\ACPI\PNP0501`
+	const skipValue = 0xffffffff
+
+	parent, err := registry.OpenKey(registry.LOCAL_MACHINE, enumPath, registry.ENUMERATE_SUB_KEYS)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s: %w", enumPath, err)
+	}
+	defer parent.Close()
+
+	instances, err := parent.ReadSubKeyNames(-1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to enumerate serial port instances under %s: %w", enumPath, err)
+	}
+
+	updated := make([]string, 0, len(instances))
+	for _, instance := range instances {
+		paramsPath := fmt.Sprintf(`%s\%s\Device Parameters`, enumPath, instance)
+
+		// CreateKey opens the key, creating it (and the Device Parameters
+		// subkey) if it does not already exist.
+		k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, paramsPath, registry.SET_VALUE)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open %s: %w", paramsPath, err)
+		}
+
+		if err := k.SetDWordValue("SkipEnumerations", skipValue); err != nil {
+			k.Close()
+			return nil, fmt.Errorf("failed to set SkipEnumerations on %s: %w", paramsPath, err)
+		}
+		k.Close()
+
+		s.logger.Infof("Set SkipEnumerations=0xffffffff on %s", paramsPath)
+		updated = append(updated, paramsPath)
+	}
+
+	return updated, nil
 }
 
 func (s *windowsSerialmouseDisable) Close(context.Context) error {
