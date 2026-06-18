@@ -2,6 +2,7 @@ package windowsserialmouse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	generic "go.viam.com/rdk/components/generic"
@@ -135,6 +136,10 @@ func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error
 	const skipValue = 0xffffffff
 
 	parent, err := registry.OpenKey(registry.LOCAL_MACHINE, enumPath, registry.ENUMERATE_SUB_KEYS)
+	if errors.Is(err, registry.ErrNotExist) {
+		s.logger.Warnf("registry key %s does not exist, skipping serial port enumeration", enumPath)
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %w", enumPath, err)
 	}
@@ -149,8 +154,8 @@ func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error
 	for _, instance := range instances {
 		paramsPath := fmt.Sprintf(`%s\%s\Device Parameters`, enumPath, instance)
 
-		// CreateKey opens the key, creating it (and the Device Parameters
-		// subkey) if it does not already exist.
+		// CreateKey opens the key, creating it (and the Device Parameters subkey)
+		// if it does not already exist.
 		k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, paramsPath, registry.SET_VALUE)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open %s: %w", paramsPath, err)
