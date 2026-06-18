@@ -15,6 +15,8 @@ var (
 	Disable = resource.NewModel("viam-soleng", "windows-serialmouse", "disable")
 )
 
+const sermouseKeyPath = `System\CurrentControlSet\Services\sermouse`
+
 func init() {
 	resource.RegisterComponent(generic.API, Disable,
 		resource.Registration[resource.Resource, *Config]{
@@ -85,15 +87,15 @@ func (s *windowsSerialmouseDisable) DoCommand(ctx context.Context, cmd map[strin
 		return nil, err
 	}
 
-	message := "Start value previously set to 4"
+	message := "sermouse service was already disabled (Start was 4); serial port enumeration polling disabled"
 	if startChanged {
-		message = "Start value changed from 3 to 4"
+		message = "sermouse service disabled (Start changed from 3 to 4); serial port enumeration polling disabled"
 	}
 
 	return map[string]interface{}{
-		"start":         4,
-		"changed":       startChanged,
-		"message":       message,
+		"start":                      fmt.Sprintf(`%s\Start : 4`, sermouseKeyPath),
+		"sermouse-changed":           startChanged,
+		"message":                    message,
 		"enumeration_disabled_ports": enumerationDisabledPorts,
 	}, nil
 }
@@ -101,9 +103,7 @@ func (s *windowsSerialmouseDisable) DoCommand(ctx context.Context, cmd map[strin
 // disableSermouseService sets the sermouse service Start value to 4 (disabled).
 // It reports whether the value was actually changed.
 func (s *windowsSerialmouseDisable) disableSermouseService() (bool, error) {
-	const keyPath = `System\CurrentControlSet\Services\sermouse`
-
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.QUERY_VALUE|registry.SET_VALUE)
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, sermouseKeyPath, registry.QUERY_VALUE|registry.SET_VALUE)
 	if err != nil {
 		return false, fmt.Errorf("failed to open registry key: %w", err)
 	}
@@ -168,7 +168,8 @@ func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error
 		k.Close()
 
 		s.logger.Infof("Set SkipEnumerations=0xffffffff on %s", paramsPath)
-		enumerationDisabledPorts = append(enumerationDisabledPorts, paramsPath)
+		enumerationDisabledPorts = append(enumerationDisabledPorts,
+			fmt.Sprintf(`%s\SkipEnumerations : 0xffffffff`, paramsPath))
 	}
 
 	return enumerationDisabledPorts, nil
