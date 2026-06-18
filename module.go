@@ -2,6 +2,7 @@ package windowsserialmouse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	generic "go.viam.com/rdk/components/generic"
@@ -79,7 +80,7 @@ func (s *windowsSerialmouseDisable) DoCommand(ctx context.Context, cmd map[strin
 	// Also stop Windows from polling the built-in serial port(s) for a serial
 	// mouse during enumeration, otherwise GPS data on the line can be
 	// misdetected. PNP0501 is the ACPI ID for the built-in 16550 serial port.
-	skippedPorts, err := s.skipSerialPortEnumeration()
+	enumerationDisabledPorts, err := s.skipSerialPortEnumeration()
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +94,7 @@ func (s *windowsSerialmouseDisable) DoCommand(ctx context.Context, cmd map[strin
 		"start":         4,
 		"changed":       startChanged,
 		"message":       message,
-		"skipped_ports": skippedPorts,
+		"enumeration_disabled_ports": enumerationDisabledPorts,
 	}, nil
 }
 
@@ -135,6 +136,10 @@ func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error
 	const skipValue = 0xffffffff
 
 	parent, err := registry.OpenKey(registry.LOCAL_MACHINE, enumPath, registry.ENUMERATE_SUB_KEYS)
+	if errors.Is(err, registry.ErrNotExist) {
+		s.logger.Debugf("registry key %s does not exist, skipping serial port enumeration", enumPath)
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %w", enumPath, err)
 	}
@@ -145,12 +150,12 @@ func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error
 		return nil, fmt.Errorf("failed to enumerate serial port instances under %s: %w", enumPath, err)
 	}
 
-	updated := make([]string, 0, len(instances))
+	enumerationDisabledPorts := make([]string, 0, len(instances))
 	for _, instance := range instances {
 		paramsPath := fmt.Sprintf(`%s\%s\Device Parameters`, enumPath, instance)
 
-		// CreateKey opens the key, creating it (and the Device Parameters
-		// subkey) if it does not already exist.
+		// CreateKey opens the key, creating it (and the Device Parameters subkey)
+		// if it does not already exist.
 		k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, paramsPath, registry.SET_VALUE)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open %s: %w", paramsPath, err)
@@ -163,10 +168,10 @@ func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error
 		k.Close()
 
 		s.logger.Infof("Set SkipEnumerations=0xffffffff on %s", paramsPath)
-		updated = append(updated, paramsPath)
+		enumerationDisabledPorts = append(enumerationDisabledPorts, paramsPath)
 	}
 
-	return updated, nil
+	return enumerationDisabledPorts, nil
 }
 
 func (s *windowsSerialmouseDisable) Close(context.Context) error {

@@ -65,11 +65,11 @@ This module implements the DoCommand. Periodically send it an empty `{}` via the
   "start": 4,
   "changed": true,
   "message": "Start value changed from 3 to 4",
-  "skipped_ports": [
+  "enumeration_disabled_ports": [
     "System\\CurrentControlSet\\Enum\\ACPI\\PNP0501\\1\\Device Parameters"
   ]
 }
 ```
 
 - `changed` — whether the `sermouse` `Start` value was updated this call (`false` if it was already 4).
-- `skipped_ports` — the `Device Parameters` paths where `SkipEnumerations` was written. Empty if no `PNP0501` serial port instances were found.
+- `enumeration_disabled_ports` — the ports where we disabled serial-mouse enumeration; that is, the `Device Parameters` paths where `SkipEnumerations` was written. Empty if no `PNP0501` serial port instances were found.
