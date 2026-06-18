@@ -80,7 +80,7 @@ func (s *windowsSerialmouseDisable) DoCommand(ctx context.Context, cmd map[strin
 	// Also stop Windows from polling the built-in serial port(s) for a serial
 	// mouse during enumeration, otherwise GPS data on the line can be
 	// misdetected. PNP0501 is the ACPI ID for the built-in 16550 serial port.
-	skippedPorts, err := s.skipSerialPortEnumeration()
+	enumerationDisabledPorts, err := s.skipSerialPortEnumeration()
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (s *windowsSerialmouseDisable) DoCommand(ctx context.Context, cmd map[strin
 		"start":         4,
 		"changed":       startChanged,
 		"message":       message,
-		"skipped_ports": skippedPorts,
+		"enumeration_disabled_ports": enumerationDisabledPorts,
 	}, nil
 }
 
@@ -137,7 +137,7 @@ func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error
 
 	parent, err := registry.OpenKey(registry.LOCAL_MACHINE, enumPath, registry.ENUMERATE_SUB_KEYS)
 	if errors.Is(err, registry.ErrNotExist) {
-		s.logger.Warnf("registry key %s does not exist, skipping serial port enumeration", enumPath)
+		s.logger.Debugf("registry key %s does not exist, skipping serial port enumeration", enumPath)
 		return nil, nil
 	}
 	if err != nil {
@@ -150,7 +150,7 @@ func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error
 		return nil, fmt.Errorf("failed to enumerate serial port instances under %s: %w", enumPath, err)
 	}
 
-	updated := make([]string, 0, len(instances))
+	enumerationDisabledPorts := make([]string, 0, len(instances))
 	for _, instance := range instances {
 		paramsPath := fmt.Sprintf(`%s\%s\Device Parameters`, enumPath, instance)
 
@@ -168,10 +168,10 @@ func (s *windowsSerialmouseDisable) skipSerialPortEnumeration() ([]string, error
 		k.Close()
 
 		s.logger.Infof("Set SkipEnumerations=0xffffffff on %s", paramsPath)
-		updated = append(updated, paramsPath)
+		enumerationDisabledPorts = append(enumerationDisabledPorts, paramsPath)
 	}
 
-	return updated, nil
+	return enumerationDisabledPorts, nil
 }
 
 func (s *windowsSerialmouseDisable) Close(context.Context) error {
